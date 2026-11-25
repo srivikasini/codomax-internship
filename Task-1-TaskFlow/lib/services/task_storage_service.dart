@@ -4,6 +4,31 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/task_item.dart';
 
+/// Persisted reminder & alert preferences for TaskFlow.
+class TaskAlertSettings {
+  const TaskAlertSettings({
+    this.notificationEmail = '',
+    this.soundEnabled = true,
+  });
+
+  final String notificationEmail;
+  final bool soundEnabled;
+
+  Map<String, dynamic> toJson() => {
+        'notificationEmail': notificationEmail,
+        'soundEnabled': soundEnabled,
+      };
+
+  factory TaskAlertSettings.fromJson(Map<String, dynamic> json) {
+    final email = json['notificationEmail'];
+    final sound = json['soundEnabled'];
+    return TaskAlertSettings(
+      notificationEmail: email is String ? email.trim() : '',
+      soundEnabled: sound is bool ? sound : true,
+    );
+  }
+}
+
 /// Exception thrown when local task persistence fails or stored data is invalid.
 class TaskStorageException implements Exception {
   const TaskStorageException(this.message);
@@ -14,19 +39,17 @@ class TaskStorageException implements Exception {
   String toString() => 'TaskStorageException: $message';
 }
 
-/// Handles reading and writing TaskFlow tasks via [SharedPreferences].
+/// Handles reading and writing TaskFlow tasks and preferences via [SharedPreferences].
 class TaskStorageService {
   TaskStorageService({Future<SharedPreferences> Function()? prefsProvider})
       : _prefsProvider = prefsProvider ?? SharedPreferences.getInstance;
 
   static const String storageKey = 'taskflow_tasks';
+  static const String settingsKey = 'taskflow_settings';
 
   final Future<SharedPreferences> Function() _prefsProvider;
 
   /// Loads persisted tasks from local storage.
-  ///
-  /// Throws [TaskStorageException] if the underlying preference read fails or
-  /// if the stored payload cannot be parsed as a JSON list.
   Future<List<TaskItem>> loadTasks() async {
     try {
       final prefs = await _prefsProvider();
@@ -59,7 +82,6 @@ class TaskStorageService {
             loaded.add(item);
           }
         } on FormatException {
-          // Skip malformed individual records without discarding valid tasks.
           continue;
         }
       }
@@ -93,6 +115,30 @@ class TaskStorageService {
       rethrow;
     } catch (e) {
       throw TaskStorageException('Failed to save tasks: $e');
+    }
+  }
+
+  Future<TaskAlertSettings> loadSettings() async {
+    try {
+      final prefs = await _prefsProvider();
+      final raw = prefs.getString(settingsKey);
+      if (raw == null || raw.trim().isEmpty) {
+        return const TaskAlertSettings();
+      }
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is! Map) return const TaskAlertSettings();
+      return TaskAlertSettings.fromJson(Map<String, dynamic>.from(decoded));
+    } catch (_) {
+      return const TaskAlertSettings();
+    }
+  }
+
+  Future<void> saveSettings(TaskAlertSettings settings) async {
+    try {
+      final prefs = await _prefsProvider();
+      await prefs.setString(settingsKey, jsonEncode(settings.toJson()));
+    } catch (e) {
+      throw TaskStorageException('Failed to save alert settings: $e');
     }
   }
 

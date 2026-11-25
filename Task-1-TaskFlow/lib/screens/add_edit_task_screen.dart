@@ -4,6 +4,8 @@ import '../app/theme.dart';
 import '../controllers/task_controller.dart';
 import '../controllers/task_scope.dart';
 import '../models/task_item.dart';
+import '../services/reminder_platform.dart';
+import '../utils/date_formatters.dart';
 import '../widgets/feedback_banner.dart';
 
 /// Screen for creating a new task or editing an existing [TaskItem].
@@ -28,6 +30,7 @@ class _AddEditTaskScreenState extends State<AddEditTaskScreen> {
 
   late TaskCategory _selectedCategory;
   late bool _isCompleted;
+  DateTime? _reminderAt;
   bool _isSubmitting = false;
 
   @override
@@ -38,6 +41,7 @@ class _AddEditTaskScreenState extends State<AddEditTaskScreen> {
     _notesController = TextEditingController(text: task?.notes ?? '');
     _selectedCategory = task?.category ?? TaskCategory.personal;
     _isCompleted = task?.isCompleted ?? false;
+    _reminderAt = task?.reminderAt;
   }
 
   @override
@@ -45,6 +49,72 @@ class _AddEditTaskScreenState extends State<AddEditTaskScreen> {
     _titleController.dispose();
     _notesController.dispose();
     super.dispose();
+  }
+
+  Future<void> _setReminder(DateTime? target) async {
+    setState(() {
+      _reminderAt = target;
+    });
+    if (target != null &&
+        isBrowserAlertSupported &&
+        browserNotificationPermission == 'default') {
+      await requestBrowserNotificationPermission();
+    }
+  }
+
+  Future<void> _pickCustomDateTime() async {
+    final now = DateTime.now();
+    final initial = _reminderAt != null && _reminderAt!.isAfter(now)
+        ? _reminderAt!
+        : now.add(const Duration(minutes: 30));
+
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: now.add(const Duration(days: 365 * 2)),
+    );
+    if (pickedDate == null || !mounted) return;
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (pickedTime == null || !mounted) return;
+
+    final combined = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+
+    if (!combined.isAfter(DateTime.now())) {
+      showAppSnackBar(
+        context,
+        message: 'Please choose a future time for your alarm.',
+        isError: true,
+      );
+      return;
+    }
+
+    await _setReminder(combined);
+  }
+
+  DateTime _tonightAtEight() {
+    final now = DateTime.now();
+    final tonight = DateTime(now.year, now.month, now.day, 20, 0);
+    return tonight.isAfter(now)
+        ? tonight
+        : tonight.add(const Duration(days: 1));
+  }
+
+  DateTime _tomorrowAtNine() {
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day, 9, 0)
+        .add(const Duration(days: 1));
+    return tomorrow;
   }
 
   Future<void> _submit() async {
@@ -65,12 +135,15 @@ class _AddEditTaskScreenState extends State<AddEditTaskScreen> {
         notes: _notesController.text,
         category: _selectedCategory,
         isCompleted: _isCompleted,
+        reminderAt: _reminderAt,
+        clearReminder: _reminderAt == null,
       );
     } else {
       result = await controller.addTask(
         title: _titleController.text,
         notes: _notesController.text,
         category: _selectedCategory,
+        reminderAt: _reminderAt,
       );
     }
 
@@ -129,7 +202,7 @@ class _AddEditTaskScreenState extends State<AddEditTaskScreen> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Give your task a clear title and assign a category.',
+                      'Give your task a clear title, category, and optional alarm.',
                       style: TextStyle(
                         fontSize: 13.5,
                         color: AppTheme.textSecondary,
@@ -142,7 +215,7 @@ class _AddEditTaskScreenState extends State<AddEditTaskScreen> {
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         labelText: 'Task Title *',
-                        hintText: 'e.g., Complete Flutter assignment',
+                        hintText: 'e.g., Review weekly goals',
                         prefixIcon: Icon(
                           Icons.edit_note,
                           color: AppTheme.primary,
@@ -161,7 +234,8 @@ class _AddEditTaskScreenState extends State<AddEditTaskScreen> {
                       minLines: 2,
                       decoration: const InputDecoration(
                         labelText: 'Notes (optional)',
-                        hintText: 'Add extra context, checklist items, or links...',
+                        hintText:
+                            'Add extra context, checklist items, or links...',
                         alignLabelWithHint: true,
                         prefixIcon: Padding(
                           padding: EdgeInsets.only(bottom: 24),
@@ -195,9 +269,7 @@ class _AddEditTaskScreenState extends State<AddEditTaskScreen> {
                               Icon(
                                 category.icon,
                                 size: 16,
-                                color: selected
-                                    ? Colors.white
-                                    : category.color,
+                                color: selected ? Colors.white : category.color,
                               ),
                               const SizedBox(width: 6),
                               Text(category.label),
@@ -221,6 +293,115 @@ class _AddEditTaskScreenState extends State<AddEditTaskScreen> {
                           },
                         );
                       }).toList(),
+                    ),
+                    const SizedBox(height: 20),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppTheme.background,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: _reminderAt != null
+                              ? AppTheme.primary.withValues(alpha: 0.45)
+                              : AppTheme.border,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.alarm_outlined,
+                                size: 20,
+                                color: AppTheme.primary,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Alarm & Reminder',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.textPrimary,
+                                      ),
+                                    ),
+                                    Text(
+                                      _reminderAt != null
+                                          ? 'Scheduled for ${DateFormatters.formatDateTime(_reminderAt!)}'
+                                          : 'Optional alert at a specific date & time',
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        color: _reminderAt != null
+                                            ? AppTheme.primary
+                                            : AppTheme.textSecondary,
+                                        fontWeight: _reminderAt != null
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (_reminderAt != null)
+                                IconButton(
+                                  tooltip: 'Clear alarm',
+                                  onPressed: () => _setReminder(null),
+                                  icon: const Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              ActionChip(
+                                avatar: const Icon(Icons.timer_outlined, size: 16),
+                                label: const Text('+15 min'),
+                                onPressed: () => _setReminder(
+                                  DateTime.now().add(const Duration(minutes: 15)),
+                                ),
+                              ),
+                              ActionChip(
+                                avatar: const Icon(Icons.schedule, size: 16),
+                                label: const Text('+1 hour'),
+                                onPressed: () => _setReminder(
+                                  DateTime.now().add(const Duration(hours: 1)),
+                                ),
+                              ),
+                              ActionChip(
+                                label: const Text('Tonight 8 PM'),
+                                onPressed: () => _setReminder(_tonightAtEight()),
+                              ),
+                              ActionChip(
+                                label: const Text('Tomorrow 9 AM'),
+                                onPressed: () => _setReminder(_tomorrowAtNine()),
+                              ),
+                              FilledButton.tonalIcon(
+                                onPressed: _pickCustomDateTime,
+                                icon: const Icon(
+                                  Icons.calendar_month_outlined,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                  _reminderAt == null
+                                      ? 'Pick Date & Time'
+                                      : 'Change Time',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                     if (isEditing) ...[
                       const SizedBox(height: 18),

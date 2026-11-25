@@ -28,15 +28,18 @@ The project was upgraded from a single-screen prototype into a modular, multi-sc
   5. **Settings & About** — App metadata, local `SharedPreferences` storage status, stored task summary, and a confirmation-protected **Clear Completed Tasks** action.
 - **UI States**: Dedicated loading spinner, distinct empty states (no tasks vs. no filter matches), inline storage error banner with Retry/Reset recovery, and floating feedback snackbars.
 
-### Task Management
-- Add new tasks (via Dashboard Quick Add or Add/Edit screen)
-- Edit existing task title, notes, category, and completion status
-- Delete tasks with destructive-action confirmation dialog
-- Mark pending tasks as completed and reopen completed tasks as pending
-- Assign categories: `Personal`, `Study`, `Work`
-- Filter independently by **Category** and **Status** (`All`, `Pending`, `Completed`)
-- Search tasks in real time by title or notes
-- Live statistics: Total, Completed, Pending, and completion progress percentage
+- **Task Management & Scheduled Alarms**
+  - Add new tasks (via Dashboard Quick Add or Add/Edit screen)
+  - Schedule optional date/time **Alarms & Reminders** (`+15 min`, `+1 hour`, `Tonight 8 PM`, `Tomorrow 9 AM`, or custom date/time picker)
+  - Real-time in-app **Alarm Dialog** with **Mark Done**, **Snooze 10m**, **Send Email Reminder**, and **Dismiss**
+  - Browser desktop notifications & Web Audio chime on Web, plus pre-filled `mailto:` email reminder drafts configured in **Settings & About**
+  - Edit existing task title, notes, category, alarm time, and completion status
+  - Delete tasks with destructive-action confirmation dialog
+  - Mark pending tasks as completed and reopen completed tasks as pending
+  - Assign categories: `Personal`, `Study`, `Work`
+  - Filter independently by **Category** and **Status** (`All`, `Pending`, `Completed`)
+  - Search tasks in real time by title or notes
+  - Live statistics: Total, Completed, Pending, and completion progress percentage
 
 ### Input Validation & Error Handling
 - Empty and whitespace-only title validation

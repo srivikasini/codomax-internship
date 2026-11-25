@@ -81,6 +81,8 @@ class TaskItem {
     required this.createdAt,
     required this.updatedAt,
     this.notes = '',
+    this.reminderAt,
+    this.reminderDismissed = false,
   });
 
   final String id;
@@ -90,6 +92,21 @@ class TaskItem {
   final bool isCompleted;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? reminderAt;
+  final bool reminderDismissed;
+
+  bool get hasReminder => reminderAt != null;
+
+  bool get isReminderDue =>
+      reminderAt != null &&
+      !isCompleted &&
+      !reminderDismissed &&
+      !reminderAt!.isAfter(DateTime.now());
+
+  bool get isUpcomingReminder =>
+      reminderAt != null &&
+      !isCompleted &&
+      reminderAt!.isAfter(DateTime.now());
 
   TaskItem copyWith({
     String? id,
@@ -99,6 +116,9 @@ class TaskItem {
     bool? isCompleted,
     DateTime? createdAt,
     DateTime? updatedAt,
+    DateTime? reminderAt,
+    bool clearReminder = false,
+    bool? reminderDismissed,
   }) {
     return TaskItem(
       id: id ?? this.id,
@@ -108,6 +128,9 @@ class TaskItem {
       isCompleted: isCompleted ?? this.isCompleted,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      reminderAt: clearReminder ? null : (reminderAt ?? this.reminderAt),
+      reminderDismissed:
+          clearReminder ? false : (reminderDismissed ?? this.reminderDismissed),
     );
   }
 
@@ -120,6 +143,8 @@ class TaskItem {
       'completed': isCompleted,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
+      if (reminderAt != null) 'reminderAt': reminderAt!.toIso8601String(),
+      if (reminderDismissed) 'reminderDismissed': reminderDismissed,
     };
   }
 
@@ -143,6 +168,10 @@ class TaskItem {
         ? DateTime.tryParse(rawUpdatedAt) ?? parsedCreatedAt
         : parsedCreatedAt;
 
+    final rawReminderAt = json['reminderAt'];
+    final parsedReminderAt =
+        rawReminderAt is String ? DateTime.tryParse(rawReminderAt) : null;
+
     final rawId = json['id'];
     final id = (rawId is String && rawId.trim().isNotEmpty)
         ? rawId.trim()
@@ -153,6 +182,9 @@ class TaskItem {
 
     final rawCompleted = json['completed'];
     final isCompleted = rawCompleted is bool ? rawCompleted : false;
+
+    final rawDismissed = json['reminderDismissed'];
+    final reminderDismissed = rawDismissed is bool ? rawDismissed : false;
 
     final rawCategory = json['category'];
     final category = TaskCategory.fromString(
@@ -167,6 +199,8 @@ class TaskItem {
       isCompleted: isCompleted,
       createdAt: parsedCreatedAt,
       updatedAt: parsedUpdatedAt,
+      reminderAt: parsedReminderAt,
+      reminderDismissed: reminderDismissed,
     );
   }
 }

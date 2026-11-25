@@ -178,5 +178,41 @@ void main() {
       controller.clearFilters();
       expect(controller.filteredTasks.length, 3);
     });
+
+    test('triggers due alarms, snoozes, and persists reminder settings',
+        () async {
+      final controller = TaskController(enableReminderTicker: false);
+      await controller.loadTasks();
+
+      final pastTime = DateTime.now().subtract(const Duration(minutes: 1));
+      final added = await controller.addTask(
+        title: 'Take medicine',
+        category: TaskCategory.personal,
+        reminderAt: pastTime,
+      );
+      expect(added.success, isTrue);
+      expect(controller.activeAlarmTask?.id, added.task!.id);
+
+      final snoozed = await controller.snoozeReminder(
+        added.task!.id,
+        duration: const Duration(minutes: 10),
+      );
+      expect(snoozed.success, isTrue);
+      expect(controller.activeAlarmTask, isNull);
+      expect(snoozed.task!.reminderAt!.isAfter(DateTime.now()), isTrue);
+
+      expect(controller.validateEmail('invalid-email'), isNotNull);
+      final savedSettings = await controller.saveAlertSettings(
+        notificationEmail: 'user@example.com',
+        soundEnabled: false,
+      );
+      expect(savedSettings.success, isTrue);
+
+      final controller2 = TaskController(enableReminderTicker: false);
+      await controller2.loadTasks();
+      expect(controller2.notificationEmail, 'user@example.com');
+      expect(controller2.soundEnabled, isFalse);
+      expect(controller2.tasks.first.reminderAt, isNotNull);
+    });
   });
 }

@@ -2,9 +2,10 @@ import 'package:material_ui/material_ui.dart';
 
 import '../app/theme.dart';
 import '../models/task_item.dart';
+import '../utils/date_formatters.dart';
 import 'category_badge.dart';
 
-/// Card representing a single task with completion toggle, metadata, and actions.
+/// Card representing a single task with completion toggle, metadata, reminder, and actions.
 class TaskCard extends StatelessWidget {
   const TaskCard({
     super.key,
@@ -24,6 +25,9 @@ class TaskCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final completed = task.isCompleted;
+    final reminderAt = task.reminderAt;
+    final isOverdue =
+        reminderAt != null && !completed && !reminderAt.isAfter(DateTime.now());
 
     return Container(
       margin: const EdgeInsets.only(bottom: 11),
@@ -127,37 +131,73 @@ class TaskCard extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            if (reminderAt != null && !completed)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: (isOverdue
+                                          ? AppTheme.danger
+                                          : AppTheme.primary)
+                                      .withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isOverdue
+                                          ? Icons.alarm_on
+                                          : Icons.alarm_outlined,
+                                      size: 13,
+                                      color: isOverdue
+                                          ? AppTheme.danger
+                                          : AppTheme.primary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      DateFormatters.formatReminderShort(
+                                        reminderAt,
+                                      ),
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: isOverdue
+                                            ? AppTheme.danger
+                                            : AppTheme.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                           ],
                         ),
                       ],
                     ),
                   ),
                 ),
-                Column(
+                Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: 'Edit task',
-                          onPressed: onEdit,
-                          icon: const Icon(
-                            Icons.edit_outlined,
-                            size: 20,
-                            color: AppTheme.primary,
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: 'Delete task',
-                          onPressed: onDelete,
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            size: 20,
-                            color: AppTheme.danger,
-                          ),
-                        ),
-                      ],
+                    IconButton(
+                      tooltip: 'Edit task',
+                      onPressed: onEdit,
+                      icon: const Icon(
+                        Icons.edit_outlined,
+                        size: 20,
+                        color: AppTheme.primary,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Delete task',
+                      onPressed: onDelete,
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        size: 20,
+                        color: AppTheme.danger,
+                      ),
                     ),
                   ],
                 ),

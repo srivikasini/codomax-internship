@@ -1,14 +1,16 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../app/theme.dart';
 import '../controllers/task_scope.dart';
 import '../models/task_item.dart';
+import '../utils/date_formatters.dart';
 import '../widgets/category_badge.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/feedback_banner.dart';
 import 'add_edit_task_screen.dart';
 
-/// Displays complete details and actions for a specific task.
+/// Displays complete details, scheduled alarm, and actions for a specific task.
 class TaskDetailsScreen extends StatelessWidget {
   const TaskDetailsScreen({
     super.key,
@@ -16,28 +18,6 @@ class TaskDetailsScreen extends StatelessWidget {
   });
 
   final String taskId;
-
-  String _formatDateTime(DateTime dt) {
-    final local = dt.toLocal();
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    final hour12 = local.hour % 12 == 0 ? 12 : local.hour % 12;
-    final minute = local.minute.toString().padLeft(2, '0');
-    final period = local.hour >= 12 ? 'PM' : 'AM';
-    return '${months[local.month - 1]} ${local.day}, ${local.year} • $hour12:$minute $period';
-  }
 
   Future<void> _toggleStatus(BuildContext context, TaskItem task) async {
     final controller = TaskScope.read(context);
@@ -48,6 +28,39 @@ class TaskDetailsScreen extends StatelessWidget {
       message: result.message,
       isError: !result.success,
     );
+  }
+
+  Future<void> _snooze(BuildContext context, TaskItem task) async {
+    final controller = TaskScope.read(context);
+    final result = await controller.snoozeReminder(task.id);
+    if (!context.mounted) return;
+    showAppSnackBar(
+      context,
+      message: result.message,
+      isError: !result.success,
+    );
+  }
+
+  Future<void> _sendEmailReminder(BuildContext context, TaskItem task) async {
+    final controller = TaskScope.read(context);
+    final opened = await controller.sendEmailReminderForTask(task);
+    if (!opened && context.mounted) {
+      final reminderLabel = task.reminderAt != null
+          ? DateFormatters.formatDateTime(task.reminderAt!)
+          : 'Not scheduled';
+      await Clipboard.setData(
+        ClipboardData(
+          text:
+              'TaskFlow Reminder: ${task.title} (${task.category.label}) — $reminderLabel',
+        ),
+      );
+      if (context.mounted) {
+        showAppSnackBar(
+          context,
+          message: 'Reminder copied to clipboard for emailing.',
+        );
+      }
+    }
   }
 
   Future<void> _editTask(BuildContext context, TaskItem task) async {
@@ -62,7 +75,8 @@ class TaskDetailsScreen extends StatelessWidget {
     final confirmed = await showConfirmDeleteDialog(
       context,
       title: 'Delete Task',
-      message: 'Are you sure you want to delete "${task.title}"? This action cannot be undone.',
+      message:
+          'Are you sure you want to delete "${task.title}"? This action cannot be undone.',
     );
     if (!confirmed || !context.mounted) return;
 
@@ -127,6 +141,11 @@ class TaskDetailsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Task Details'),
         actions: [
+          IconButton(
+            tooltip: 'Send email reminder',
+            onPressed: () => _sendEmailReminder(context, task),
+            icon: const Icon(Icons.email_outlined),
+          ),
           IconButton(
             tooltip: 'Edit task',
             onPressed: () => _editTask(context, task),
@@ -252,15 +271,43 @@ class TaskDetailsScreen extends StatelessWidget {
                       const Divider(color: AppTheme.border),
                       const SizedBox(height: 12),
                       _MetadataRow(
+                        icon: Icons.alarm_outlined,
+                        label: 'Alarm',
+                        value: task.reminderAt != null
+                            ? DateFormatters.formatDateTime(task.reminderAt!)
+                            : 'No alarm scheduled',
+                      ),
+                      if (task.reminderAt != null && !completed) ...[
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () => _snooze(context, task),
+                              icon: const Icon(Icons.snooze, size: 16),
+                              label: const Text('Snooze 10 min'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () =>
+                                  _sendEmailReminder(context, task),
+                              icon: const Icon(Icons.email_outlined, size: 16),
+                              label: const Text('Email Reminder'),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 10),
+                      _MetadataRow(
                         icon: Icons.calendar_today_outlined,
                         label: 'Created',
-                        value: _formatDateTime(task.createdAt),
+                        value: DateFormatters.formatDateTime(task.createdAt),
                       ),
                       const SizedBox(height: 8),
                       _MetadataRow(
                         icon: Icons.update_outlined,
                         label: 'Last updated',
-                        value: _formatDateTime(task.updatedAt),
+                        value: DateFormatters.formatDateTime(task.updatedAt),
                       ),
                     ],
                   ),

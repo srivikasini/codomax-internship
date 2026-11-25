@@ -4,6 +4,8 @@ import '../app/theme.dart';
 import '../controllers/task_controller.dart';
 import '../controllers/task_scope.dart';
 import '../models/task_item.dart';
+import '../services/reminder_platform.dart';
+import '../utils/date_formatters.dart';
 import '../widgets/brand_header.dart';
 import '../widgets/confirm_delete_dialog.dart';
 import '../widgets/empty_state_card.dart';
@@ -34,12 +36,60 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final GlobalKey<FormState> _quickAddFormKey = GlobalKey<FormState>();
   final TextEditingController _quickTitleController = TextEditingController();
   TaskCategory _quickCategory = TaskCategory.personal;
+  DateTime? _quickReminderAt;
   bool _isAdding = false;
 
   @override
   void dispose() {
     _quickTitleController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickQuickReminder() async {
+    final now = DateTime.now();
+    final initial = _quickReminderAt != null && _quickReminderAt!.isAfter(now)
+        ? _quickReminderAt!
+        : now.add(const Duration(minutes: 30));
+
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: now.add(const Duration(days: 365 * 2)),
+    );
+    if (pickedDate == null || !mounted) return;
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initial),
+    );
+    if (pickedTime == null || !mounted) return;
+
+    final combined = DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+
+    if (!combined.isAfter(DateTime.now())) {
+      showAppSnackBar(
+        context,
+        message: 'Please choose a future time for your alarm.',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() {
+      _quickReminderAt = combined;
+    });
+
+    if (isBrowserAlertSupported &&
+        browserNotificationPermission == 'default') {
+      await requestBrowserNotificationPermission();
+    }
   }
 
   Future<void> _submitQuickAdd() async {
@@ -54,6 +104,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final result = await controller.addTask(
       title: _quickTitleController.text,
       category: _quickCategory,
+      reminderAt: _quickReminderAt,
     );
 
     if (!mounted) return;
@@ -64,6 +115,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (result.success) {
       _quickTitleController.clear();
+      setState(() {
+        _quickReminderAt = null;
+      });
       FocusScope.of(context).unfocus();
     }
 
@@ -146,9 +200,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Organize your day and achieve your goals.',
-            style: TextStyle(
+          Text(
+            controller.activeRemindersCount > 0
+                ? 'Organize your day — ${controller.activeRemindersCount} active ${controller.activeRemindersCount == 1 ? 'alarm' : 'alarms'} scheduled.'
+                : 'Organize your day and achieve your goals.',
+            style: const TextStyle(
               color: AppTheme.textSecondary,
               fontSize: 14,
             ),
@@ -308,6 +364,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Form(
               key: _quickAddFormKey,
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   TextFormField(
                     controller: _quickTitleController,
@@ -379,6 +436,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           label: const Text('Add'),
                         ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      ActionChip(
+                        avatar: Icon(
+                          _quickReminderAt != null
+                              ? Icons.alarm_on
+                              : Icons.alarm_add_outlined,
+                          size: 16,
+                          color: AppTheme.primary,
+                        ),
+                        label: Text(
+                          _quickReminderAt != null
+                              ? DateFormatters.formatReminderShort(
+                                  _quickReminderAt!,
+                                )
+                              : 'Set alarm',
+                        ),
+                        onPressed: _pickQuickReminder,
+                      ),
+                      if (_quickReminderAt != null)
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _quickReminderAt = null;
+                            });
+                          },
+                          child: const Text('Clear alarm'),
+                        ),
                     ],
                   ),
                 ],

@@ -14,13 +14,22 @@ void main() {
   Future<void> tapVisible(WidgetTester tester, Finder finder) async {
     await tester.ensureVisible(finder);
     await tester.pumpAndSettle();
+    final center = tester.getCenter(finder);
+    final size = tester.view.physicalSize / tester.view.devicePixelRatio;
+    if (center.dy >= size.height - 20) {
+      final scrollables = find.byType(Scrollable);
+      if (scrollables.evaluate().isNotEmpty) {
+        await tester.drag(scrollables.last, const Offset(0, -250));
+        await tester.pumpAndSettle();
+      }
+    }
     await tester.tap(finder);
     await tester.pumpAndSettle();
   }
 
   testWidgets('Dashboard quick add, validation, toggle, and stats update',
       (WidgetTester tester) async {
-    final controller = TaskController();
+    final controller = TaskController(enableReminderTicker: false);
     await tester.pumpWidget(TaskFlowApp(controller: controller));
     await tester.pumpAndSettle();
 
@@ -58,7 +67,7 @@ void main() {
 
   testWidgets('Multi-screen navigation, filters, details, edit, and delete',
       (WidgetTester tester) async {
-    final controller = TaskController();
+    final controller = TaskController(enableReminderTicker: false);
     await tester.pumpWidget(TaskFlowApp(controller: controller));
     await tester.pumpAndSettle();
 
@@ -107,6 +116,10 @@ void main() {
     // Back on Task Details with updated title.
     expect(find.text('Master Dart streams'), findsOneWidget);
 
+    // Wait for floating SnackBar to dismiss before tapping bottom Delete button.
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+
     // Delete with confirmation dialog.
     await tapVisible(tester, find.text('Delete'));
     expect(find.text('Delete Task'), findsOneWidget);
@@ -122,7 +135,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final controller = TaskController();
+    final controller = TaskController(enableReminderTicker: false);
     await tester.pumpWidget(TaskFlowApp(controller: controller));
     await tester.pumpAndSettle();
 
@@ -135,5 +148,11 @@ void main() {
       find.text('Saved automatically on this device'),
       findsOneWidget,
     );
+
+    // Trigger Test Alarm dialog and dismiss it cleanly.
+    await tapVisible(tester, find.text('Test Alarm'));
+    expect(find.text('Task Reminder Alarm'), findsOneWidget);
+    await tapVisible(tester, find.text('Dismiss'));
+    expect(find.text('Task Reminder Alarm'), findsNothing);
   });
 }

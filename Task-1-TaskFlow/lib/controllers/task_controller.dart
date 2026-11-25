@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:collection';
 
 import 'package:material_ui/material_ui.dart';
 
 import '../models/task_item.dart';
+import '../services/reminder_platform.dart';
 import '../services/task_storage_service.dart';
+import '../utils/date_formatters.dart';
 
 /// Result returned by task mutations so the UI can show accurate feedback.
 class TaskActionResult {
@@ -18,15 +21,19 @@ class TaskActionResult {
   final TaskItem? task;
 }
 
-/// Manages TaskFlow tasks, filters, search, statistics, validation, and storage.
+/// Manages TaskFlow tasks, filters, search, statistics, validation, alarms, and storage.
 class TaskController extends ChangeNotifier {
-  TaskController({TaskStorageService? storageService})
-      : _storageService = storageService ?? TaskStorageService();
+  TaskController({
+    TaskStorageService? storageService,
+    this.enableReminderTicker = true,
+  }) : _storageService = storageService ?? TaskStorageService();
 
   static const int maxTitleLength = 100;
   static const int maxNotesLength = 300;
+  static final RegExp _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
 
   final TaskStorageService _storageService;
+  final bool enableReminderTicker;
 
   final List<TaskItem> _tasks = [];
   bool _isLoading = false;
@@ -37,6 +44,13 @@ class TaskController extends ChangeNotifier {
   String _searchQuery = '';
   String _selectedCategoryFilter = 'All';
   TaskStatusFilter _selectedStatusFilter = TaskStatusFilter.all;
+
+  String _notificationEmail = '';
+  bool _soundEnabled = true;
+
+  TaskItem? _activeAlarmTask;
+  final Set<String> _triggeredAlarmKeys = <String>{};
+  Timer? _reminderTimer;
 
   Future<void>? _inFlightLoad;
   Future<void> _saveQueue = Future<void>.value();
@@ -52,9 +66,15 @@ class TaskController extends ChangeNotifier {
   String get selectedCategoryFilter => _selectedCategoryFilter;
   TaskStatusFilter get selectedStatusFilter => _selectedStatusFilter;
 
+  String get notificationEmail => _notificationEmail;
+  bool get soundEnabled => _soundEnabled;
+  TaskItem? get activeAlarmTask => _activeAlarmTask;
+
   int get totalCount => _tasks.length;
   int get completedCount => _tasks.where((t) => t.isCompleted).length;
   int get pendingCount => totalCount - completedCount;
+  int get activeRemindersCount =>
+      _tasks.where((t) => t.hasReminder && !t.isCompleted).length;
   double get completionProgress =>
       totalCount == 0 ? 0.0 : completedCount / totalCount;
   int get completionPercentage => (completionProgress * 100).round();
@@ -140,7 +160,16 @@ class TaskController extends ChangeNotifier {
     return null;
   }
 
-  /// Loads tasks from local storage once, guarding against duplicate loads.
+  String? validateEmail(String? rawValue) {
+    final trimmed = rawValue?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    if (!_emailPattern.hasMatch(trimmed)) {
+      return 'Enter a valid email address (e.g., name@example.com).';
+    }
+    return null;
+  }
+
+  /// Loads tasks and reminder settings from local storage once.
   Future<void> loadTasks({bool forceReload = false}) {
     if (_inFlightLoad != null) {
       return _inFlightLoad!;
@@ -160,12 +189,17 @@ class TaskController extends ChangeNotifier {
 
     try {
       final loaded = await _storageService.loadTasks();
+      final settings = await _storageService.loadSettings();
       loaded.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       _tasks
         ..clear()
         ..addAll(loaded);
+      _notificationEmail = settings.notificationEmail;
+      _soundEnabled = settings.soundEnabled;
       _hasLoaded = true;
+      _startReminderTicker();
+      _checkDueReminders();
     } on TaskStorageException catch (e) {
       _errorMessage = e.message;
     } catch (e) {
@@ -175,6 +209,194 @@ class TaskController extends ChangeNotifier {
       _inFlightLoad = null;
       notifyListeners();
     }
+  }
+
+  void _startReminderTicker() {
+    if (!enableReminderTicker) return;
+    _reminderTimer ??= Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => checkDueRemindersNow(),
+    );
+  }
+
+  /// Scans pending tasks with active alarms and fires the next due reminder.
+  void checkDueRemindersNow() {
+    _checkDueReminders();
+  }
+
+  void _checkDueReminders() {
+    if (_activeAlarmTask != null) return;
+
+    final now = DateTime.now();
+    TaskItem? nextDue;
+    for (final task in _tasks) {
+      if (task.reminderAt == null || task.isCompleted || task.reminderDismissed) {
+        continue;
+      }
+      if (task.reminderAt!.isAfter(now)) continue;
+
+      final triggerKey =
+          '${task.id}_${task.reminderAt!.millisecondsSinceEpoch}';
+      if (_triggeredAlarmKeys.contains(triggerKey)) continue;
+
+      if (nextDue == null ||
+          task.reminderAt!.isBefore(nextDue.reminderAt!)) {
+        nextDue = task;
+      }
+    }
+
+    if (nextDue == null) return;
+
+    final key =
+        '${nextDue.id}_${nextDue.reminderAt!.millisecondsSinceEpoch}';
+    _triggeredAlarmKeys.add(key);
+    _activeAlarmTask = nextDue;
+    notifyListeners();
+
+    unawaited(
+      triggerBrowserAlert(
+        title: 'TaskFlow Alarm • ${nextDue.category.label}',
+        body: 'Time to complete: ${nextDue.title}',
+        playSound: _soundEnabled,
+      ),
+    );
+  }
+
+  Future<void> triggerTestAlarm() async {
+    final now = DateTime.now();
+    final sampleTask = _tasks.isNotEmpty
+        ? _tasks.first
+        : TaskItem(
+            id: 'test_alarm_preview',
+            title: 'Sample Task Reminder Alarm',
+            category: TaskCategory.personal,
+            isCompleted: false,
+            createdAt: now,
+            updatedAt: now,
+            reminderAt: now,
+          );
+
+    _activeAlarmTask = sampleTask;
+    notifyListeners();
+
+    await triggerBrowserAlert(
+      title: 'TaskFlow Alarm Test',
+      body: 'Alerts and sound chimes are working for "${sampleTask.title}".',
+      playSound: _soundEnabled,
+    );
+  }
+
+  Future<void> dismissActiveAlarm({bool markReminderDismissed = true}) async {
+    final alarmTask = _activeAlarmTask;
+    _activeAlarmTask = null;
+
+    if (alarmTask != null &&
+        markReminderDismissed &&
+        alarmTask.id != 'test_alarm_preview') {
+      final index = _tasks.indexWhere((t) => t.id == alarmTask.id);
+      if (index != -1) {
+        _tasks[index] = _tasks[index].copyWith(
+          reminderDismissed: true,
+          updatedAt: DateTime.now(),
+        );
+        notifyListeners();
+        await _enqueueSave();
+        _checkDueReminders();
+        return;
+      }
+    }
+
+    notifyListeners();
+    _checkDueReminders();
+  }
+
+  Future<TaskActionResult> snoozeReminder(
+    String id, {
+    Duration duration = const Duration(minutes: 10),
+  }) async {
+    final index = _tasks.indexWhere((t) => t.id == id);
+    if (index == -1) {
+      _activeAlarmTask = null;
+      notifyListeners();
+      return const TaskActionResult(
+        success: false,
+        message: 'Task could not be found.',
+      );
+    }
+
+    final snoozedAt = DateTime.now().add(duration);
+    final updated = _tasks[index].copyWith(
+      reminderAt: snoozedAt,
+      reminderDismissed: false,
+      updatedAt: DateTime.now(),
+    );
+    _tasks[index] = updated;
+    if (_activeAlarmTask?.id == id) {
+      _activeAlarmTask = null;
+    }
+    notifyListeners();
+
+    final saved = await _enqueueSave();
+    return TaskActionResult(
+      success: saved,
+      message: saved
+          ? 'Alarm snoozed until ${DateFormatters.formatReminderShort(snoozedAt)}.'
+          : (_errorMessage ?? 'Failed to snooze alarm.'),
+      task: updated,
+    );
+  }
+
+  Future<TaskActionResult> saveAlertSettings({
+    required String notificationEmail,
+    required bool soundEnabled,
+  }) async {
+    final emailError = validateEmail(notificationEmail);
+    if (emailError != null) {
+      return TaskActionResult(success: false, message: emailError);
+    }
+
+    _notificationEmail = notificationEmail.trim();
+    _soundEnabled = soundEnabled;
+    notifyListeners();
+
+    try {
+      await _storageService.saveSettings(
+        TaskAlertSettings(
+          notificationEmail: _notificationEmail,
+          soundEnabled: _soundEnabled,
+        ),
+      );
+      return const TaskActionResult(
+        success: true,
+        message: 'Reminder & alert preferences saved.',
+      );
+    } on TaskStorageException catch (e) {
+      return TaskActionResult(success: false, message: e.message);
+    }
+  }
+
+  Future<bool> sendEmailReminderForTask(
+    TaskItem task, {
+    String? overrideEmail,
+  }) {
+    final recipient = (overrideEmail ?? _notificationEmail).trim();
+    final reminderText = task.reminderAt != null
+        ? DateFormatters.formatDateTime(task.reminderAt!)
+        : 'Not scheduled';
+    final notesLine =
+        task.notes.isNotEmpty ? '\nNotes: ${task.notes}' : '';
+
+    return openEmailDraft(
+      toEmail: recipient,
+      subject: 'TaskFlow Reminder: ${task.title}',
+      body: 'Reminder to complete your task:\n\n'
+          'Task: ${task.title}\n'
+          'Category: ${task.category.label}\n'
+          'Scheduled Time: $reminderText\n'
+          'Status: ${task.isCompleted ? 'Completed' : 'Pending'}'
+          '$notesLine\n\n'
+          '— Sent from TaskFlow',
+    );
   }
 
   void setSearchQuery(String query) {
@@ -212,6 +434,7 @@ class TaskController extends ChangeNotifier {
     required String title,
     required TaskCategory category,
     String notes = '',
+    DateTime? reminderAt,
   }) async {
     if (_isLoading) {
       return const TaskActionResult(
@@ -239,11 +462,14 @@ class TaskController extends ChangeNotifier {
       isCompleted: false,
       createdAt: now,
       updatedAt: now,
+      reminderAt: reminderAt,
+      reminderDismissed: false,
     );
 
     _tasks.insert(0, newTask);
     _errorMessage = null;
     notifyListeners();
+    _checkDueReminders();
 
     final saved = await _enqueueSave();
     if (!saved) {
@@ -256,7 +482,9 @@ class TaskController extends ChangeNotifier {
 
     return TaskActionResult(
       success: true,
-      message: 'Task added successfully.',
+      message: reminderAt != null
+          ? 'Task added with alarm for ${DateFormatters.formatReminderShort(reminderAt)}.'
+          : 'Task added successfully.',
       task: newTask,
     );
   }
@@ -267,6 +495,8 @@ class TaskController extends ChangeNotifier {
     required TaskCategory category,
     String notes = '',
     bool? isCompleted,
+    DateTime? reminderAt,
+    bool clearReminder = false,
   }) async {
     final index = _tasks.indexWhere((t) => t.id == id);
     if (index == -1) {
@@ -287,17 +517,25 @@ class TaskController extends ChangeNotifier {
     }
 
     final existing = _tasks[index];
+    final reminderChanged = clearReminder || reminderAt != existing.reminderAt;
     final updated = existing.copyWith(
       title: title.trim(),
       notes: notes.trim(),
       category: category,
       isCompleted: isCompleted ?? existing.isCompleted,
       updatedAt: DateTime.now(),
+      reminderAt: reminderAt,
+      clearReminder: clearReminder,
+      reminderDismissed: reminderChanged ? false : existing.reminderDismissed,
     );
 
     _tasks[index] = updated;
+    if (_activeAlarmTask?.id == id && (updated.isCompleted || clearReminder)) {
+      _activeAlarmTask = null;
+    }
     _errorMessage = null;
     notifyListeners();
+    _checkDueReminders();
 
     final saved = await _enqueueSave();
     if (!saved) {
@@ -325,12 +563,17 @@ class TaskController extends ChangeNotifier {
     }
 
     final current = _tasks[index];
+    final nextCompleted = !current.isCompleted;
     final toggled = current.copyWith(
-      isCompleted: !current.isCompleted,
+      isCompleted: nextCompleted,
+      reminderDismissed: nextCompleted ? true : false,
       updatedAt: DateTime.now(),
     );
 
     _tasks[index] = toggled;
+    if (_activeAlarmTask?.id == id && nextCompleted) {
+      _activeAlarmTask = null;
+    }
     _errorMessage = null;
     notifyListeners();
 
@@ -362,6 +605,9 @@ class TaskController extends ChangeNotifier {
     }
 
     final removed = _tasks.removeAt(index);
+    if (_activeAlarmTask?.id == id) {
+      _activeAlarmTask = null;
+    }
     _errorMessage = null;
     notifyListeners();
 
@@ -412,6 +658,7 @@ class TaskController extends ChangeNotifier {
     try {
       await _storageService.clearTasks();
       _tasks.clear();
+      _activeAlarmTask = null;
       _errorMessage = null;
       _hasLoaded = true;
       notifyListeners();
@@ -448,5 +695,12 @@ class TaskController extends ChangeNotifier {
       _isSaving = false;
       notifyListeners();
     }
+  }
+
+  @override
+  void dispose() {
+    _reminderTimer?.cancel();
+    _reminderTimer = null;
+    super.dispose();
   }
 }
