@@ -4,7 +4,7 @@ import '../app/theme.dart';
 import '../models/expense_entry.dart';
 import '../utils/formatters.dart';
 
-/// Card representing a single financial entry with amount, category, and actions.
+/// Refined transaction card with category accent, payment chip, signed amount badge, and actions.
 class TransactionTile extends StatelessWidget {
   const TransactionTile({
     super.key,
@@ -33,25 +33,32 @@ class TransactionTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: SpendFlowTheme.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: SpendFlowTheme.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.025),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
               children: [
                 Container(
-                  height: 44,
-                  width: 44,
+                  height: 46,
+                  width: 46,
                   decoration: BoxDecoration(
                     color: entry.category.color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(13),
                   ),
                   child: Icon(
                     entry.category.icon,
@@ -70,35 +77,39 @@ class TransactionTile extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                           color: SpendFlowTheme.textPrimary,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 5),
                       Wrap(
-                        spacing: 8,
+                        spacing: 6,
                         runSpacing: 4,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          Text(
-                            entry.category.label,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: entry.category.color,
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color:
+                                  entry.category.color.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              entry.category.label,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: entry.category.color,
+                              ),
                             ),
                           ),
                           Text(
-                            '• ${entry.paymentMethod.label}',
+                            '${entry.paymentMethod.label} • ${SpendFormatters.formatRelativeDate(entry.date)}',
                             style: const TextStyle(
-                              fontSize: 12,
-                              color: SpendFlowTheme.textSecondary,
-                            ),
-                          ),
-                          Text(
-                            '• ${SpendFormatters.formatRelativeDate(entry.date)}',
-                            style: const TextStyle(
-                              fontSize: 12,
+                              fontSize: 11.5,
                               color: SpendFlowTheme.textSecondary,
                             ),
                           ),
@@ -111,15 +122,25 @@ class TransactionTile extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      signedAmount,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: amountColor,
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: amountColor.withValues(alpha: 0.09),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        signedAmount,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: amountColor,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 4),
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

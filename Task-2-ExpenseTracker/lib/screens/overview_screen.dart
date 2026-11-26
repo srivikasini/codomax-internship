@@ -9,12 +9,13 @@ import '../widgets/category_breakdown_card.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/empty_state_card.dart';
 import '../widgets/feedback_helper.dart';
+import '../widgets/spend_donut_chart.dart';
 import '../widgets/summary_stat_card.dart';
 import '../widgets/transaction_tile.dart';
 import 'add_edit_entry_screen.dart';
 import 'entry_details_screen.dart';
 
-/// Main dashboard screen displaying balance, budget progress, category summary, and recent entries.
+/// Main dashboard displaying balance, quick actions, donut chart, category totals, and recent entries.
 class OverviewScreen extends StatelessWidget {
   const OverviewScreen({
     super.key,
@@ -74,13 +75,12 @@ class OverviewScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = ExpenseScope.of(context);
     final recentEntries = controller.entries.take(5).toList(growable: false);
-    final topCategories = controller
-        .categoryBreakdown(
-          TransactionType.expense,
-          range: DateRangeFilter.thisMonth,
-        )
-        .take(4)
-        .toList(growable: false);
+    final monthCategories = controller.categoryBreakdown(
+      TransactionType.expense,
+      range: DateRangeFilter.thisMonth,
+    );
+    final topCategories = monthCategories.take(4).toList(growable: false);
+    final isWide = MediaQuery.sizeOf(context).width >= 840;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 96),
@@ -93,8 +93,20 @@ class OverviewScreen extends StatelessWidget {
                 height: 46,
                 width: 46,
                 decoration: BoxDecoration(
-                  color: SpendFlowTheme.primary,
+                  gradient: const LinearGradient(
+                    colors: [
+                      SpendFlowTheme.primary,
+                      SpendFlowTheme.primaryDark,
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: SpendFlowTheme.primary.withValues(alpha: 0.22),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: const Icon(
                   Icons.account_balance_wallet_outlined,
@@ -116,7 +128,7 @@ class OverviewScreen extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      'Personal Expense & Budget Tracker',
+                      'Smart Expense & Budget Tracker',
                       style: TextStyle(
                         fontSize: 12.5,
                         color: SpendFlowTheme.textSecondary,
@@ -149,6 +161,30 @@ class OverviewScreen extends StatelessWidget {
             monthlyIncome: controller.thisMonthIncome,
             monthlyBudget: controller.monthlyBudget,
             currency: controller.currency,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickActionPill(
+                  icon: Icons.north_east,
+                  label: 'Add Expense',
+                  color: SpendFlowTheme.expense,
+                  onTap: () =>
+                      _openAdd(context, initialType: TransactionType.expense),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickActionPill(
+                  icon: Icons.south_west,
+                  label: 'Add Income',
+                  color: SpendFlowTheme.income,
+                  onTap: () =>
+                      _openAdd(context, initialType: TransactionType.income),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           Row(
@@ -199,16 +235,51 @@ class OverviewScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          CategoryBreakdownCard(
-            title: 'Top Categories This Month',
-            items: topCategories,
-            currency: controller.currency,
-            emptyMessage: 'Record an expense to see category totals here.',
-            onCategoryTap: (item) => onNavigateToTransactions(
-              typeFilter: TransactionType.expense,
-              categoryFilter: item.category,
+          if (isWide)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: SpendDonutChartCard(
+                    title: 'This Month Split',
+                    items: monthCategories,
+                    currency: controller.currency,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: CategoryBreakdownCard(
+                    title: 'Top Categories This Month',
+                    items: topCategories,
+                    currency: controller.currency,
+                    emptyMessage:
+                        'Record an expense to see category totals here.',
+                    onCategoryTap: (item) => onNavigateToTransactions(
+                      typeFilter: TransactionType.expense,
+                      categoryFilter: item.category,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else ...[
+            SpendDonutChartCard(
+              title: 'This Month Split',
+              items: monthCategories,
+              currency: controller.currency,
             ),
-          ),
+            const SizedBox(height: 14),
+            CategoryBreakdownCard(
+              title: 'Top Categories This Month',
+              items: topCategories,
+              currency: controller.currency,
+              emptyMessage: 'Record an expense to see category totals here.',
+              onCategoryTap: (item) => onNavigateToTransactions(
+                typeFilter: TransactionType.expense,
+                categoryFilter: item.category,
+              ),
+            ),
+          ],
           const SizedBox(height: 22),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -241,7 +312,7 @@ class OverviewScreen extends StatelessWidget {
             EmptyStateCard(
               title: 'No transactions recorded yet',
               subtitle:
-                  'Track your first expense or income to unlock live budgets and category totals.',
+                  'Track your first expense or income to unlock live budgets and charts.',
               actionLabel: 'Record first entry',
               onAction: () => _openAdd(context),
             )
@@ -256,6 +327,57 @@ class OverviewScreen extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _QuickActionPill extends StatelessWidget {
+  const _QuickActionPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: color.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: color.withValues(alpha: 0.22)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 17, color: color),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

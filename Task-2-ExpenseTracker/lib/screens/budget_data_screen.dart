@@ -5,10 +5,11 @@ import '../app/theme.dart';
 import '../controllers/expense_scope.dart';
 import '../models/expense_entry.dart';
 import '../services/local_expense_database.dart';
+import '../utils/formatters.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/feedback_helper.dart';
 
-/// Manages monthly budget, currency preferences, JSON backup/restore, and database stats.
+/// Manages monthly budget, safe daily spend, currency preferences, and JSON backup/restore.
 class BudgetDataScreen extends StatefulWidget {
   const BudgetDataScreen({super.key});
 
@@ -43,6 +44,14 @@ class _BudgetDataScreenState extends State<BudgetDataScreen> {
   void dispose() {
     _budgetController.dispose();
     super.dispose();
+  }
+
+  double _dailySafeAllowance(double remaining) {
+    if (remaining <= 0) return 0;
+    final now = DateTime.now();
+    final daysInMonth = DateTime(now.year, now.month + 1, 0).day;
+    final daysLeft = (daysInMonth - now.day) + 1;
+    return remaining / (daysLeft > 0 ? daysLeft : 1);
   }
 
   Future<void> _saveBudget() async {
@@ -192,6 +201,7 @@ class _BudgetDataScreenState extends State<BudgetDataScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = ExpenseScope.of(context);
+    final dailySafe = _dailySafeAllowance(controller.budgetRemaining);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 96),
@@ -214,13 +224,67 @@ class _BudgetDataScreenState extends State<BudgetDataScreen> {
               color: SpendFlowTheme.textSecondary,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [
+                  SpendFlowTheme.primary,
+                  SpendFlowTheme.primaryDeep,
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.today_outlined,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Daily Safe-to-Spend',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${SpendFormatters.formatCurrency(dailySafe, currencySymbol: controller.currency)} / day',
+                        style: const TextStyle(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               color: SpendFlowTheme.surface,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: SpendFlowTheme.border),
             ),
             child: Form(
@@ -319,7 +383,7 @@ class _BudgetDataScreenState extends State<BudgetDataScreen> {
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               color: SpendFlowTheme.surface,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: SpendFlowTheme.border),
             ),
             child: Column(

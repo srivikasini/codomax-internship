@@ -104,6 +104,7 @@ void main() {
     expect(find.byType(NavigationRail), findsOneWidget);
 
     await tapVisible(tester, find.text('Analytics'));
+    expect(find.text('6-Month Comparison'), findsOneWidget);
     expect(find.text('Expenses by Category'), findsOneWidget);
 
     await tapVisible(tester, find.text('Budget'));

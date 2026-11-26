@@ -35,6 +35,23 @@ class PaymentBreakdownItem {
   final int transactionCount;
 }
 
+/// Monthly income vs. expense summary for multi-month comparison charts.
+class MonthlySummary {
+  const MonthlySummary({
+    required this.year,
+    required this.month,
+    required this.label,
+    required this.income,
+    required this.expense,
+  });
+
+  final int year;
+  final int month;
+  final String label;
+  final double income;
+  final double expense;
+}
+
 /// Result returned by controller mutations for UI feedback.
 class ExpenseActionResult {
   const ExpenseActionResult({
@@ -229,6 +246,53 @@ class ExpenseController extends ChangeNotifier {
       ..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
 
     return items;
+  }
+
+  /// Returns monthly income vs. expense totals for the past [monthCount] months.
+  List<MonthlySummary> recentMonthsComparison({int monthCount = 6}) {
+    const monthNames = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final now = DateTime.now();
+    final summaries = <MonthlySummary>[];
+
+    for (var offset = monthCount - 1; offset >= 0; offset--) {
+      final target = DateTime(now.year, now.month - offset, 1);
+      var inc = 0.0;
+      var exp = 0.0;
+      for (final entry in _entries) {
+        final d = entry.date.toLocal();
+        if (d.year == target.year && d.month == target.month) {
+          if (entry.type == TransactionType.income) {
+            inc += entry.amount;
+          } else {
+            exp += entry.amount;
+          }
+        }
+      }
+      summaries.add(
+        MonthlySummary(
+          year: target.year,
+          month: target.month,
+          label: monthNames[target.month - 1],
+          income: inc,
+          expense: exp,
+        ),
+      );
+    }
+
+    return summaries;
   }
 
   ExpenseEntry? findById(String id) {

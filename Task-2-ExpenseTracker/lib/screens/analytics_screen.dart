@@ -5,8 +5,10 @@ import '../controllers/expense_scope.dart';
 import '../models/expense_entry.dart';
 import '../utils/formatters.dart';
 import '../widgets/category_breakdown_card.dart';
+import '../widgets/monthly_comparison_card.dart';
+import '../widgets/spend_donut_chart.dart';
 
-/// Analytics screen showing category totals, income vs expense ratio, and payment methods.
+/// Analytics screen showing 6-month comparison, category donut, and payment breakdown.
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
 
@@ -28,8 +30,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       TransactionType.income,
       range: _period,
     );
-    final paymentBreakdown =
-        controller.paymentMethodBreakdown(range: _period);
+    final paymentBreakdown = controller.paymentMethodBreakdown(range: _period);
+    final monthlyComparison = controller.recentMonthsComparison(monthCount: 6);
 
     final totalExp = expenseCategories.fold<double>(
       0,
@@ -55,11 +57,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ),
           const SizedBox(height: 4),
           const Text(
-            'Visual breakdown of your spending, income, and payment channels.',
+            'Compare monthly spending trends, categories, and payment channels.',
             style: TextStyle(
               fontSize: 13.5,
               color: SpendFlowTheme.textSecondary,
             ),
+          ),
+          const SizedBox(height: 16),
+          MonthlyComparisonCard(
+            months: monthlyComparison,
+            currency: controller.currency,
           ),
           const SizedBox(height: 16),
           SingleChildScrollView(
@@ -101,7 +108,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               color: SpendFlowTheme.surface,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: SpendFlowTheme.border),
             ),
             child: Column(
@@ -158,6 +165,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          SpendDonutChartCard(
+            title: 'Spending Share (${_period.label})',
+            items: expenseCategories,
+            currency: controller.currency,
+          ),
+          const SizedBox(height: 16),
           CategoryBreakdownCard(
             title: 'Expenses by Category',
             items: expenseCategories,
@@ -177,7 +190,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               color: SpendFlowTheme.surface,
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(20),
               border: Border.all(color: SpendFlowTheme.border),
             ),
             child: Column(

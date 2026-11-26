@@ -180,5 +180,35 @@ void main() {
       final invalid = await controller.importBackupJson('not json');
       expect(invalid.success, isFalse);
     });
+
+    test('computes multi-month comparison across old and current months',
+        () async {
+      final controller = ExpenseController();
+      await controller.loadDatabase();
+
+      final now = DateTime.now();
+      final lastMonth = DateTime(now.year, now.month - 1, 15);
+      await controller.addEntry(
+        title: 'Last month rent',
+        amount: 9000,
+        type: TransactionType.expense,
+        category: ExpenseCategory.bills,
+        paymentMethod: PaymentMethod.bankTransfer,
+        date: lastMonth,
+      );
+      await controller.addEntry(
+        title: 'This month groceries',
+        amount: 1500,
+        type: TransactionType.expense,
+        category: ExpenseCategory.food,
+        paymentMethod: PaymentMethod.upi,
+        date: now,
+      );
+
+      final months = controller.recentMonthsComparison(monthCount: 6);
+      expect(months.length, 6);
+      expect(months[4].expense, 9000);
+      expect(months[5].expense, 1500);
+    });
   });
 }
